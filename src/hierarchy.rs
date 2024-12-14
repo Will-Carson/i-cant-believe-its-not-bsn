@@ -5,7 +5,7 @@ use bevy_ecs::{
     prelude::*,
     world::{Command, DeferredWorld},
 };
-use bevy_hierarchy::BuildWorldChildren;
+use bevy_hierarchy::BuildChildren;
 
 /// A component that, when added to an entity, will add a child entity with the given bundle.
 ///
@@ -56,7 +56,7 @@ fn with_child_hook<B: Bundle>(
     _component_id: ComponentId,
 ) {
     // Component hooks can't perform structural changes, so we need to rely on commands.
-    world.commands().add(WithChildCommand {
+    world.commands().queue(WithChildCommand {
         parent_entity: entity,
         _phantom: PhantomData::<B>,
     });
@@ -69,7 +69,7 @@ struct WithChildCommand<B> {
 
 impl<B: Bundle> Command for WithChildCommand<B> {
     fn apply(self, world: &mut World) {
-        let Some(mut entity_mut) = world.get_entity_mut(self.parent_entity) else {
+        let Ok(mut entity_mut) = world.get_entity_mut(self.parent_entity) else {
             #[cfg(debug_assertions)]
             panic!("Parent entity not found");
 
@@ -161,7 +161,7 @@ fn with_children_hook<B: Bundle, I: IntoIterator<Item = B> + Send + Sync + 'stat
     _component_id: ComponentId,
 ) {
     // Component hooks can't perform structural changes, so we need to rely on commands.
-    world.commands().add(WithChildrenCommand {
+    world.commands().queue(WithChildrenCommand {
         parent_entity: entity,
         _phantom: PhantomData::<(B, I)>,
     });
@@ -176,7 +176,7 @@ impl<B: Bundle, I: IntoIterator<Item = B> + Send + Sync + 'static> Command
     for WithChildrenCommand<B, I>
 {
     fn apply(self, world: &mut World) {
-        let Some(mut entity_mut) = world.get_entity_mut(self.parent_entity) else {
+        let Ok(mut entity_mut) = world.get_entity_mut(self.parent_entity) else {
             #[cfg(debug_assertions)]
             panic!("Parent entity not found");
 
@@ -361,7 +361,7 @@ mod tests {
         }
 
         let mut world = World::new();
-        let parent = world.run_system_once(spawn_with_child);
+        let parent = world.run_system_once(spawn_with_child).unwrap();
 
         assert!(!world.entity(parent).contains::<WithChild<B>>());
         assert!(world.entity(parent).contains::<A>());
