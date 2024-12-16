@@ -281,12 +281,13 @@ impl<B: Bundle> IntoIterator for Fragment<B> {
 /// }
 /// ```
 ///
-/// # Useage
+/// # Usage
 ///
 /// Once you have a template, you can insert it into the world using `Commands::build`.
 ///
-/// # Grammer
-/// The entire `template!` macro is defined the the following ABNF grammer
+/// # Grammar
+///
+/// The entire `template!` macro is defined the the following ABNF grammar
 ///
 /// ```ignore
 ///      <template> = *( <node> )
