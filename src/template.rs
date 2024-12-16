@@ -13,7 +13,7 @@
 //! This module should not be mixed with the hierarchy module. Use one or the other, not
 //! both.
 //! 
-//! # Disclamer
+//! # Disclaimer
 //!
 //! This is a first attempt, and was written in about 48 hours over a weekend. There are
 //! warts and footguns, issues and bugs. Someone more diligent or more knowlageable about
