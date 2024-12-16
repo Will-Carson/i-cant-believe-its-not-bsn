@@ -1,5 +1,9 @@
 # Release notes for `i-cant-believe-its-not-bsn`
 
+## 0.3
+
+- added declarative templates with a `template` macro
+
 ## 0.2
 
 - now compatible with Bevy 0.15
