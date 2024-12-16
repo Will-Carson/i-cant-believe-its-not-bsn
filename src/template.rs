@@ -33,7 +33,7 @@ use bevy_ecs::{
     component::ComponentId
 };
 
-/// A template is an ordered collection of herogenous prototypes, which can be inserted
+/// A template is an ordered collection of heterogenous prototypes, which can be inserted
 /// into the world.
 pub type Template = Vec<Box<dyn Prototype + Send + Sync + 'static>>;
 
