@@ -1,7 +1,7 @@
 [package]
 name = "i-cant-believe-its-not-bsn"
 authors = ["Alice I. Cecile"]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 repository = "https://github.com/Leafwing-Studios/i-cant-believe-its-not-bsn"
 license = "MIT OR Apache-2.0"
@@ -11,3 +11,6 @@ tags = ["bevy", "ecs"]
 [dependencies]
 bevy_ecs = { version = "0.15", default-features = false }
 bevy_hierarchy = { version = "0.15", default-features = false }
+
+[dev-dependencies]
+bevy = { version = "0.15" }
