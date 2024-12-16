@@ -8,7 +8,7 @@
 //!
 //! See the [`template`] macro docs for details.
 //!
-//! # Compatability
+//! # Compatibility
 //!
 //! This module should not be mixed with the hierarchy module. Use one or the other, not
 //! both.
