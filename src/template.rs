@@ -95,10 +95,10 @@ impl<'w, 's> CommandsTemplateExt for Commands<'w, 's> {
     }
 }
 
-/// A prototype is the type-errased trait form of a `Fragment`. It has a name, and can be
+/// A prototype is the type-erased trait form of a [`Fragment`]. It has a name, and can be
 /// inserted into the world multiple times, updating it's previous value each time.
 ///
-/// This trait is mostly needed to get around `Bundle` not being dyn compatable.
+/// This trait is mostly needed to get around `Bundle` not being dyn compatible.
 pub trait Prototype {
     /// Returns the name of this prototype.
     fn name(&self) -> Cow<'static, str>;
@@ -287,7 +287,7 @@ impl<B: Bundle> IntoIterator for Fragment<B> {
 ///
 /// # Grammar
 ///
-/// The entire `template!` macro is defined the the following ABNF grammar
+/// The entire `template!` macro is defined with the following ABNF grammar
 ///
 /// ```ignore
 ///      <template> = *( <node> )
