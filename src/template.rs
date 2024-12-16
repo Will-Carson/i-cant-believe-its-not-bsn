@@ -12,7 +12,7 @@
 //!
 //! This module should not be mixed with the hierarchy module. Use one or the other, not
 //! both.
-//! 
+//!
 //! # Disclaimer
 //!
 //! This is a first attempt, and was written in about 48 hours over a weekend. There are
@@ -27,11 +27,8 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
+use bevy_ecs::{component::ComponentId, prelude::*};
 use bevy_hierarchy::prelude::*;
-use bevy_ecs::{
-    prelude::*,
-    component::ComponentId
-};
 
 /// A template is an ordered collection of heterogenous prototypes, which can be inserted
 /// into the world.
@@ -261,25 +258,8 @@ impl<B: Bundle> IntoIterator for Fragment<B> {
 ///
 /// # Composition
 ///
-/// It's easy to compose functions that return `Templates`.
-///
-/// ```rust
-/// # use i_cant_believe_its_not_bsn::*;
-/// # use bevy::prelude::*;
-/// # use bevy::color::palettes::css;
-/// fn hello_to(name: String, party_time: bool) -> Template {
-///     template! {
-///         greetings: { TextSpan::new("Hello") };
-///         name: {
-///             if party_time {
-///                 (TextSpan::new(name), TextColor::default())
-///             } else {
-///                 (TextSpan::new(format!("{}!!!!!", name)), TextColor(css::HOT_PINK.into()))
-///             }
-///         };
-///     }
-/// }
-/// ```
+/// It's easy to compose functions that return `Templates`. See the examples directory for an indication
+/// of how to do this.
 ///
 /// # Usage
 ///
