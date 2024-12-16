@@ -11,3 +11,6 @@ tags = ["bevy", "ecs"]
 [dependencies]
 bevy_ecs = { version = "0.15", default-features = false }
 bevy_hierarchy = { version = "0.15", default-features = false }
+
+[dev-dependencies]
+bevy = { version = "0.15" }
