@@ -38,7 +38,7 @@ fn sheep_system(mut commands: Commands, sheep: Query<&Sheep>) {
     let num_sheep = sheep.iter().len();
 
     let template = template!(
-        root: {
+        {
             Node {
                 position_type: PositionType::Absolute,
                 bottom: Val::Px(5.0),
@@ -46,7 +46,7 @@ fn sheep_system(mut commands: Commands, sheep: Query<&Sheep>) {
                 ..default()
             }
         } [
-            { counter(num_sheep, "sheep", Button::Increment, Button::Decrement) };
+            @{ counter(num_sheep, "sheep", Button::Increment, Button::Decrement) };
         ];
     );
 
@@ -56,16 +56,13 @@ fn sheep_system(mut commands: Commands, sheep: Query<&Sheep>) {
 // A function that returns an ecs template.
 fn counter<T: Component>(num: usize, name: &str, inc: T, dec: T) -> Template {
     template! {
-        header: { Text::new("You have ") } [
-            number: { TextSpan::new(format!("{num}")) };
-            sheep: { TextSpan::new(format!(" {name}!")) };
+        { Text::new("You have ") }
+        [
+            { TextSpan::new(format!("{num}")) };
+            { TextSpan::new(format!(" {name}!")) };
         ];
-        increase: {(
-            Button, Text::new("Increase"), TextColor(css::GREEN.into()), inc, visible_if(num < 100)
-        )};
-        decrease: {(
-            Button, Text::new("Decrease"), TextColor(css::RED.into()), dec, visible_if(num > 0)
-        )};
+        {( Button, Text::new("Increase"), TextColor(css::GREEN.into()), inc, visible_if(num < 100) )};
+        {( Button, Text::new("Decrease"), TextColor(css::RED.into()), dec, visible_if(num > 0) )};
     }
 }
 
