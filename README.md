@@ -15,7 +15,7 @@ You can use the helper component `WithChild`, and its iterator sibling, `WithChi
 Just add it as a component holding the bundle you want to use to spawn the child, and you're off to the races.
 A component hook will see that this component has been added, extract the data from your `WithChild` component, and then move it into a child, cleaning itself up as it goes.
 
-These helper components are extreamly useful when you just want to insert a tree of entities declaratively.
+These helper components are extremely useful when you just want to insert a tree of entities declaratively.
 
 # The Template Macro
 
@@ -23,5 +23,5 @@ Alternatively you can use the `template!()` macro, which is very similar to the 
 Arbitrary data can be passed into the macro using normal rust blocks.
 The macro returns portable `Template` values, which can be spliced into other templates using `@{ ... }`.
 
-Not only is the macro declarative and composable, it also supports basic incrementalization (doing partial updates to the ecs rathre than rebuilding from scratch).
-Building the same macro multiple times with `commands.build(template)` does only the work nessicary to bring the ecs into alignmen with the template.
+Not only is the macro declarative and composable, it also supports basic incrementalization (doing partial updates to the ecs rather than rebuilding from scratch).
+Building the same macro multiple times with `commands.build(template)` does only the work necessary to bring the ecs into alignment with the template.

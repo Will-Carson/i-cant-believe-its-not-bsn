@@ -239,9 +239,9 @@ impl<B: Bundle> IntoIterator for Fragment<B> {
 /// This is a declarative template macro for bevy!
 ///
 /// It gives you something a little like `bsn` and a little `jsx`. Like `bsn`,
-/// it's a shorthand for defining ecs structures. Like `jsx` you can build
+/// it's a shorthand for defining ECS structures. Like `jsx` you can build
 /// fragments (in this case `Template` values) at runtime and compose them using
-/// normal rust functions and syntax.
+/// normal Rust functions and syntax.
 ///
 /// Here's an example of what it looks like:
 ///
