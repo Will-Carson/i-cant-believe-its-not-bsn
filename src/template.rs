@@ -1,46 +1,23 @@
-//! This is a tiny declarative template library for bevy!
-//!
-//! The goal is simply to reduce the boilerplate of creating and updating
-//! entities. To that end, this crate provides a handy `template!` macro for
-//! describing dynamic ECS structres, as well as a simple `Template` struct for
-//! holding templates as value. Templates can be built using `Commands::build`,
-//! and they automatically update themselves if built multiple times.
-//!
-//! See the [`template`] macro docs for details.
-//!
-//! # Compatibility
-//!
-//! This module should not be mixed with the hierarchy module. Use one or the other, not
-//! both.
-//!
-//! # Disclaimer
-//!
-//! This is a first attempt, and was written in about 48 hours over a weekend. There are
-//! warts and footguns, issues and bugs. Someone more diligent or more knowlageable about
-//! rust macros could probably significantly improve upon this; and if that sounds at all
-//! like you I encurage you to try.
-//!
-//! The `template` macro is implemented declaratively instead of procedurally for no other
-//! reason except that I am lazy and it was easier. A proc macro would probably be a better
-//! choice.
-
 use std::collections::{HashMap, HashSet};
 
 use bevy_ecs::{component::ComponentId, prelude::*};
 use bevy_hierarchy::prelude::*;
 
-/// A template is an ordered collection of heterogenous prototypes, which can be inserted
-/// into the world.
+/// A template is an ordered collection of heterogenous prototypes, which can be
+/// inserted into the world. Returned by the [`template`] macro.
 pub type Template = Vec<Box<dyn Prototype + Send + Sync + 'static>>;
 
 trait BuildTemplate {
-    /// Builds a template onto the world. The prototypes in the template are uniquely
-    /// identified by name. The first time a name appears in a template, a new entity will
-    /// be spawned. Rebuilding a template with a prototype for that name will update the
-    /// existing entity instead of creating a new one.
+    /// Builds a template onto the world.
     ///
-    /// Building a template never despawns root level entities (that's your job), but will
-    /// despawn children of template roots if they fail to match the template.
+    /// Each top-level prototype in the template will be built on a different
+    /// entity. Each prototype's name is used to determine what entity to build
+    /// it on, so naming root level entities is recomended. Unamed prototypes
+    /// are indexed according to order. Different templates *will* conflict if
+    /// they share the same root names or if root names are ommited on both.
+    ///
+    /// For information about what happens when a prototype is built on a
+    /// specific entity, see [`Prototype::build`].
     fn build(self, world: &mut World);
 }
 
@@ -81,8 +58,9 @@ impl WorldTemplateExt for World {
     }
 }
 
-/// A command for building a template. Created by [`CommandsTemplateExt::build`].
-/// See [`BuildTemplate::build`] for more documentation.
+/// A command for building a template. The shorthand for this is
+/// [`CommandsTemplateExt::build`]. See [`BuildTemplate::build`] for more
+/// documentation.
 pub struct BuildTemplateCommand(Template);
 
 impl Command for BuildTemplateCommand {
@@ -102,17 +80,20 @@ impl<'w, 's> CommandsTemplateExt for Commands<'w, 's> {
     }
 }
 
-/// Identifies data in a `Receipt` based on the positon and name of a `Prototype`.
+/// Identifies data in a `Receipt` based on the positon and name of a
+/// `Prototype`.
 #[derive(Hash, Eq, PartialEq)]
 enum Anchor {
-    /// If a name is ommited from a the prototype, it will be given an incrementing id.
+    /// If a name is ommited from a the prototype, it will be given an
+    /// incrementing id.
     Auto(u64),
     /// If a name is provided, we use that.
     Named(String),
 }
 
-/// A prototype is the type-erased trait form of a [`Fragment`]. It has a name, and can be
-/// inserted into the world multiple times, updating it's previous value each time.
+/// A prototype is the type-erased trait form of a [`Fragment`] contained within
+/// a [`Template`]. It has a name, and can be inserted into the world multiple
+/// times, updating it's previous value each time.
 ///
 /// This trait is mostly needed to get around `Bundle` not being dyn compatible.
 pub trait Prototype {
@@ -121,13 +102,27 @@ pub trait Prototype {
 
     /// Builds the prototype on a specific entity.
     ///
-    /// The prototype uses a receipt to keep track of the state it left the world in when
-    /// it was last built. The first time it is built, it should use the default receipt.
-    /// The next time it is built, you should pass the same receipt back in.
+    /// The prototype uses a receipt to keep track of the state it left the
+    /// world in when it was last built. The first time it is built, it should
+    /// use the default receipt. The next time it is built, you should pass the
+    /// same receipt back in.
+    ///
+    /// The receipt is used to clean up old values after which were previously
+    /// included in the template and now are not. Components added by the
+    /// previous template but not the current one are removed. Children not
+    /// added by the current template are despawned recursively. The children
+    /// are also re-ordered to match the template.
+    ///
+    /// Where possible, this function tries to re-use existing entities instead
+    /// of spawning new ones.
+    ///
+    /// To instead build an entire `Template` at the root level, see
+    /// [`BuildTemplate::build`].
     fn build(self: Box<Self>, world: &mut World, receipt: &mut Receipt);
 }
 
-/// Receipts contain hints about the previous outcome of building a particular prototype.
+/// Receipts contain hints about the previous outcome of building a particular
+/// prototype.
 #[derive(Default)]
 pub struct Receipt {
     /// The entity this prototype was last built on (if any).
@@ -140,18 +135,19 @@ pub struct Receipt {
 
 /// A resource that tracks the receipts for root-level templates.
 #[derive(Resource, Default)]
-pub struct RootReceipt {
+struct RootReceipt {
     receipts: HashMap<Anchor, Receipt>,
 }
 
-/// A fragment represents a hierarchy of bundles ready to be inserted into the ecs. You can
-/// think of it as a named bundle, with other named bundles as children.
+/// A fragment is a tree of bundles with optional names. It implements
+/// [`Prototype`] and can be stored or used as a `Box<dyn Prototype>`.
 pub struct Fragment<B: Bundle> {
     /// The name of the fragment, used to identify children across builds.
     pub anchor: Option<String>,
     /// The bundle to be inserted on the entity.
     pub bundle: B,
-    /// The template for the children.
+    /// The template for the children. This boils down to a type-errased
+    /// `Fragment` vector.
     pub children: Template,
 }
 
@@ -229,8 +225,8 @@ impl<B: Bundle> Prototype for Fragment<B> {
     }
 }
 
-/// We implement this so that it is easy to return manually constructed a `Fragment`
-/// from a block in the `template!` macro.
+// We implement this so that it is easy to return manually constructed a `Fragment`
+// from a block in the `template!` macro.
 impl<B: Bundle> IntoIterator for Fragment<B> {
     type Item = Box<dyn Prototype>;
     type IntoIter = core::iter::Once<Self::Item>;
@@ -240,66 +236,111 @@ impl<B: Bundle> IntoIterator for Fragment<B> {
     }
 }
 
-/// # Purpose
+/// This is a declarative template macro for bevy!
 ///
-/// This macro gives you something a little like `jsx`. Much like jsx lets you build and compose html fragments
-/// at runtime using normal javascript functions, this lets you build and compose ECS hierarchy fragments
-/// in normal rust functions, using normal rust syntax.
+/// It gives you something a little like `bsn` and a little `jsx`. Like `bsn`,
+/// it's a shorthand for defining ecs structures. Like `jsx` you can build
+/// fragments (in this case `Template` values) at runtime and compose them using
+/// normal rust functions and syntax.
 ///
 /// Here's an example of what it looks like:
+///
 /// ```rust
 /// # use i_cant_believe_its_not_bsn::*;
 /// # use bevy::prelude::*;
 /// # let dark_mode = false;
 /// # #[derive(Component)]
 /// # pub struct MyMarkerComponent;
-/// let template = template! {
+/// template! {
 ///     {(
 ///         Text::new(""),
 ///         TextFont::from_font_size(28.0),
 ///         if dark_mode { TextColor::WHITE } else { TextColor::BLACK }
 ///     )} [
-///         { TextSpan::new("Hello") };
+///         { TextSpan::new("Hello ") };
 ///         { TextSpan::new("World") };
 ///         {( TextSpan::new("!"), MyMarkerComponent )};
 ///     ];
 /// };
 /// ```
 ///
-/// The grammer is simple: The template contains a list of nodes, each with a name. Each node
-/// may also have mote named nodes as children.
+/// The grammer is simple: Every time you see `{ ... }` it's a normal rust
+/// code-block, and the template itself is just a list of fragments.
 ///
-/// There is no custom syntax for logic. Every time you see `{ ... }` it's a normal rust code-block, and
-/// there are several places where you can substitute in code-blocked for fixed values.
+/// # Fragments
 ///
-/// The most basic node is a block which returns a `Bundle`. This block can be prefixed with an optional name
-/// annotation (eg `my_name: {( MyComponents ... )}`). A node may also have a list of child nodes
-/// given after it in square brackets. All nodes must end with a semicolon.
+/// What's a fragment? Well, it's just a block that returns a `Bundle`, with an
+/// optional name and list of child fragments. Names must be followed by a
+/// colon, children are given in square brakets, and the whole thing always ends
+/// with a semicolon. Behind the scenes these are used to create boxed
+/// [`Fragment`] values.
 ///
-/// You don't have to settle for a static structure either; instead of using the normal node syntax
-/// you can just plop in a codeblock prefixed with `@` to insent a whole iterator of `Box<dyn Prototype>>`.
-/// This is called "splicing".
+/// # Splices
+///
+/// Templates can also have other template "spliced" into the list of fragments.
+/// A splice is just a codeblock prefixed with `@` and returning a `Template`
+/// (or more generally an iterator of `Box<dyn Prototype>>`). The contents of
+/// this iterator is inserted into the list of fragments at the splice point.
+/// Like fragments, splices also must be followed by a semicolon.
+///
+/// ```
+/// # use i_cant_believe_its_not_bsn::*;
+/// # use bevy::prelude::*;
+/// let children_template = template! {
+///     { TextSpan::new("child 1") };
+///     { TextSpan::new("child 2") };
+/// };
+///
+/// let parent_template = template! {
+///     { Text::new("parent") } [
+///         @{ children_template };
+///     ];
+/// };
+/// ```
 ///
 /// # Names
 ///
-/// Most nodes don't need names, and you can safely omit the name. But you should give nodes unique names
-/// in the following three cases:
-/// + Entities which somtimes there and somtimes not in different builds.
+/// Fragments can be optionally prefixed by a name. A name is either a literal
+/// symbols or code blocks that return a type implementing `Display`, followed
+/// by a colon.
+///
+/// ```
+/// # use i_cant_believe_its_not_bsn::*;
+/// # use bevy::prelude::*;
+/// let dynamic_name = "my cool name";
+/// template! {
+///     static_name:    { Text::new("statically named.") };
+///     {dynamic_name}: { Text::new("dynamically named.") };
+/// };
+/// ```
+///
+/// Most fragments don't need names, and you can safely omit the name. But you
+/// should give fragments unique names in the following three cases:
+/// + Entities which only apper conditionally.
 /// + Children that may be re-ordered between builds.
 /// + Lists or iterators of entities of variable length.
 ///
-/// # Composition
+/// Failing to name dynamic fragments will produce bugs and strange behavior.
 ///
-/// It's easy to compose functions that return `Templates`. See the examples directory for an indication
-/// of how to do this. The simplest way is simply to return a template from a splice (`@{ ... }`) node.
+/// # Limitations
+///
+/// This macro is fairly limited, and it's implementation is less than 50 lines.
+/// You should expect to run into the following pain points:
+/// + Each fragment must have a statically defined bundle type.
+/// + The syntax for optional or conditional fagments is cumbersome (you have to use splices).
+/// + You are responsible for ensuring dynamic fragments are named properly, and will not be warned if you mess up.
+/// + It's hard to customize how templates are built, or build them on specific entities.
+///
+/// All of these can (and hopefully will) be addressed in a future version.
 ///
 /// # Grammar
 ///
 /// The entire `template!` macro is defined with the following ABNF grammar
 ///
 /// ```ignore
-///      <template> = *( <node> )
-///          <node> = ( "@" <$block> | <fragment> ) ";" -- where block returns `T: IntoIterator<Item = Box<dyn Prototype>>`.
+///      <template> = *( <item> )
+///          <item> = ( <splice> | <fragment> ) ";"
+///        <splcie> = "@" <$block>                      -- where block returns `T: IntoIterator<Item = Box<dyn Prototype>>`.
 ///      <fragment> = <name>? <$block> <children>?      -- where block returns `B: Bundle`.
 ///          <name> = ( <$ident> | <$block> ) ":"       -- where block returns `D: Display`.
 ///      <children> = "[" <template> "]"           
@@ -312,14 +353,14 @@ macro_rules! template {
     ($($tail:tt)*) => {{
         #[allow(unused_mut)]
         let mut fragments = Vec::new();
-        push_template!(fragments; $($tail)*);
+        push_item!(fragments; $($tail)*);
         fragments
     }};
 }
 
 /// Used internally. See `template!()`.
 #[macro_export]
-macro_rules! push_template {
+macro_rules! push_item {
     // Handle the empty cases.
     () => {};
     ($fragments:ident;) => {};
@@ -339,7 +380,7 @@ macro_rules! push_template {
     // Handle the case where it's just a codeblock, returning an iterator of prototypes.
     ($fragments:ident; @ $block:block ; $( $($sib:tt)+ )? ) => {
         $fragments.extend({ $block }); // Extend the fragments with the value of the block.
-        $(push_template!($fragments; $($sib)*))* // Continue pushing siblings onto the current list.
+        $(push_item!($fragments; $($sib)*))* // Continue pushing siblings onto the current list.
     };
 }
 
@@ -353,11 +394,11 @@ macro_rules! push_fragment {
             children: {
                 #[allow(unused_mut)]
                 let mut fragments = Vec::new();
-                $(push_template!(fragments; $($children)*);)* // Push the first child onto a new list of children.
+                $(push_item!(fragments; $($children)*);)* // Push the first child onto a new list of children.
                 fragments
             },
         };
         $fragments.push(Box::new(fragment) as Box::<_>);
-        $(push_template!($fragments; $($sib)*))* // Continue pushing siblings onto the current list.
+        $(push_item!($fragments; $($sib)*))* // Continue pushing siblings onto the current list.
     };
 }
