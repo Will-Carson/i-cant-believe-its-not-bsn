@@ -314,13 +314,7 @@ macro_rules! template {
     }};
 }
 
-// This template allows you to append templates to an existing list. It is mostly internal, prefer
-// the `template!` macro.
-//
-// This expects to have the a ident of a pre-allocated list passeed in, followed by a semicolon.
-// Uses token-tree munching to traverse down the list of siblings and into the list of children
-// at the same time. There's probably a better way to do this but *shrug* if it aint broke don't
-// fix it.
+/// Used internally. See `template!()`.
 #[macro_export]
 macro_rules! push_template {
     // Handle the empty cases.
@@ -328,29 +322,31 @@ macro_rules! push_template {
     ($fragments:ident;) => {};
     // Handle the case when no name is specified.
     ($fragments:ident; $block:block $( [ $( $children:tt )+ ] )? ; $( $($sib:tt)+ )?) => {
-        let fragment = Fragment {
-            anchor: None,
-            bundle: $block,
-            children: {
-                #[allow(unused_mut)]
-                let mut fragments = Vec::new();
-                $(push_template!(fragments; $($children)*);)* // Push the first child onto a new list of children.
-                fragments
-            },
-        };
-        $fragments.push(Box::new(fragment) as Box::<_>);
-        $(push_template!($fragments; $($sib)*))* // Continue pushing siblings onto the current list.
+        push_fragment!($fragments; { None } $block $( [ $( $children )* ] )* ; $( $( $sib )* )* )
     };
     // Handle the fully specified case, when the name is a stiatic identifier.
     ($fragments:ident; $name:ident: $block:block $( [ $( $children:tt )+ ] )? ; $( $($sib:tt)+ )?) => {
         // Stringify the name and throw it in a code-block.
-        push_template!($fragments; { stringify!($name) }: $block $( [ $( $children )* ] )* ; $( $( $sib )* )* )
+        push_fragment!($fragments; { Some(stringify!($name).to_string()) } $block $( [ $( $children )* ] )* ; $( $( $sib )* )* )
     };
     // Handle the fully specified case, when the name is also a code-block.
     ($fragments:ident; $name:block: $block:block $( [ $( $children:tt )+ ] )? ; $( $($sib:tt)+ )?) => {
+        push_fragment!($fragments; { Some($name.to_string()) } $block $( [ $( $children )* ] )* ; $( $( $sib )* )* )
+    };
+    // Handle the case where it's just a codeblock, returning an iterator of prototypes.
+    ($fragments:ident; @ $block:block ; $( $($sib:tt)+ )? ) => {
+        $fragments.extend({ $block }); // Extend the fragments with the value of the block.
+        $(push_template!($fragments; $($sib)*))* // Continue pushing siblings onto the current list.
+    };
+}
+
+/// Used internally. See `template!()`.
+#[macro_export]
+macro_rules! push_fragment {
+    ($fragments:ident; $anchor:block $bundle:block $( [ $( $children:tt )+ ] )? ; $( $($sib:tt)+ )?) => {
         let fragment = Fragment {
-            anchor: Some($name.to_string()), // Evaluate the name block, assuming it returns `D: Display`.
-            bundle: $block,
+            anchor: $anchor,
+            bundle: $bundle,
             children: {
                 #[allow(unused_mut)]
                 let mut fragments = Vec::new();
@@ -359,11 +355,6 @@ macro_rules! push_template {
             },
         };
         $fragments.push(Box::new(fragment) as Box::<_>);
-        $(push_template!($fragments; $($sib)*))* // Continue pushing siblings onto the current list.
-    };
-    // Handle the case where it's just a codeblock (assume its returning an iterator of prototypes).
-    ($fragments:ident; @ $block:block ; $( $($sib:tt)+ )? ) => {
-        $fragments.extend({ $block }); // Extend the fragments with the value of the block.
         $(push_template!($fragments; $($sib)*))* // Continue pushing siblings onto the current list.
     };
 }
