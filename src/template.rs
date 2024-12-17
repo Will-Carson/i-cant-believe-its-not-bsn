@@ -102,9 +102,12 @@ impl<'w, 's> CommandsTemplateExt for Commands<'w, 's> {
     }
 }
 
+/// Identifies data in a `Receipt` based on the positon and name of a `Prototype`.
 #[derive(Hash, Eq, PartialEq)]
-pub enum Anchor {
+enum Anchor {
+    /// If a name is ommited from a the prototype, it will be given an incrementing id.
     Auto(u64),
+    /// If a name is provided, we use that.
     Named(String),
 }
 
