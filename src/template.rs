@@ -24,7 +24,6 @@
 //! reason except that I am lazy and it was easier. A proc macro would probably be a better
 //! choice.
 
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use bevy_ecs::{component::ComponentId, prelude::*};
@@ -49,11 +48,22 @@ impl BuildTemplate for Template {
     fn build(self, world: &mut World) {
         world.init_resource::<RootReceipt>();
         world.resource_scope(|world, mut root: Mut<RootReceipt>| {
+            let mut i = 0;
             for prototype in self.into_iter() {
-                let root_receipt = root
-                    .receipts
-                    .entry(prototype.name().to_string())
-                    .or_default();
+                // Determine the anchor for the prototype.
+                let prototype_anchor = match prototype.name() {
+                    Some(name) => Anchor::Named(name.to_string()),
+                    None => {
+                        let anchor = Anchor::Auto(i);
+                        i += 1;
+                        anchor
+                    }
+                };
+
+                // Get or create the receipt for that anchor.
+                let root_receipt = root.receipts.entry(prototype_anchor).or_default();
+
+                // Build the prototype.
                 prototype.build(world, root_receipt);
             }
         });
@@ -92,17 +102,24 @@ impl<'w, 's> CommandsTemplateExt for Commands<'w, 's> {
     }
 }
 
+/// Identifies data in a `Receipt` based on the positon and name of a `Prototype`.
+#[derive(Hash, Eq, PartialEq)]
+enum Anchor {
+    /// If a name is ommited from a the prototype, it will be given an incrementing id.
+    Auto(u64),
+    /// If a name is provided, we use that.
+    Named(String),
+}
+
 /// A prototype is the type-erased trait form of a [`Fragment`]. It has a name, and can be
 /// inserted into the world multiple times, updating it's previous value each time.
 ///
 /// This trait is mostly needed to get around `Bundle` not being dyn compatible.
 pub trait Prototype {
     /// Returns the name of this prototype.
-    fn name(&self) -> Cow<'static, str>;
+    fn name(&self) -> Option<String>;
 
     /// Builds the prototype on a specific entity.
-    ///
-    /// To build a prototype:
     ///
     /// The prototype uses a receipt to keep track of the state it left the world in when
     /// it was last built. The first time it is built, it should use the default receipt.
@@ -118,20 +135,20 @@ pub struct Receipt {
     /// The coponents it inserted.
     components: HashSet<ComponentId>,
     /// The receipts of all the children, organized by name.
-    children: HashMap<String, Receipt>,
+    children: HashMap<Anchor, Receipt>,
 }
 
 /// A resource that tracks the receipts for root-level templates.
 #[derive(Resource, Default)]
 pub struct RootReceipt {
-    receipts: HashMap<String, Receipt>,
+    receipts: HashMap<Anchor, Receipt>,
 }
 
 /// A fragment represents a hierarchy of bundles ready to be inserted into the ecs. You can
 /// think of it as a named bundle, with other named bundles as children.
 pub struct Fragment<B: Bundle> {
     /// The name of the fragment, used to identify children across builds.
-    pub name: Cow<'static, str>,
+    pub anchor: Option<String>,
     /// The bundle to be inserted on the entity.
     pub bundle: B,
     /// The template for the children.
@@ -139,8 +156,8 @@ pub struct Fragment<B: Bundle> {
 }
 
 impl<B: Bundle> Prototype for Fragment<B> {
-    fn name(&self) -> Cow<'static, str> {
-        self.name.clone()
+    fn name(&self) -> Option<String> {
+        self.anchor.clone()
     }
 
     fn build(self: Box<Self>, world: &mut World, receipt: &mut Receipt) {
@@ -172,21 +189,28 @@ impl<B: Bundle> Prototype for Fragment<B> {
         let num_children = self.children.len();
         let mut children = Vec::with_capacity(num_children);
         let mut child_receipts = HashMap::with_capacity(num_children);
+        let mut i = 0;
         for child in self.children {
-            let child_name = child.name();
+            // Compute the anchor for this child, using it's name if supplied or an auto-incrementing
+            // counter if not.
+            let child_anchor = match child.name() {
+                Some(name) => Anchor::Named(name),
+                None => {
+                    let anchor = Anchor::Auto(i);
+                    i += 1;
+                    anchor
+                }
+            };
 
             // Get or create receipt
-            let mut child_receipt = receipt
-                .children
-                .remove(child_name.as_ref())
-                .unwrap_or_default();
+            let mut child_receipt = receipt.children.remove(&child_anchor).unwrap_or_default();
 
             // Build the child
             child.build(world, &mut child_receipt);
 
             // Return the receipts
             children.push(child_receipt.target.unwrap());
-            child_receipts.insert(child_name.to_string(), child_receipt);
+            child_receipts.insert(child_anchor, child_receipt);
         }
 
         // Position the children beneith the entity
@@ -230,14 +254,14 @@ impl<B: Bundle> IntoIterator for Fragment<B> {
 /// # #[derive(Component)]
 /// # pub struct MyMarkerComponent;
 /// let template = template! {
-///     root: {(
+///     {(
 ///         Text::new(""),
 ///         TextFont::from_font_size(28.0),
 ///         if dark_mode { TextColor::WHITE } else { TextColor::BLACK }
 ///     )} [
-///         hello: { TextSpan::new("Hello") };
-///         world: { TextSpan::new("World") };
-///         punctuation: {( TextSpan::new("!"), MyMarkerComponent )};
+///         { TextSpan::new("Hello") };
+///         { TextSpan::new("World") };
+///         {( TextSpan::new("!"), MyMarkerComponent )};
 ///     ];
 /// };
 /// ```
@@ -248,22 +272,26 @@ impl<B: Bundle> IntoIterator for Fragment<B> {
 /// There is no custom syntax for logic. Every time you see `{ ... }` it's a normal rust code-block, and
 /// there are several places where you can substitute in code-blocked for fixed values.
 ///
-/// The general format of a node is this:
-/// 1. The name (eg. `root:`) which may be a fixed symbol or a code-block, and which ends in a colon.
-/// 2. A code-block which returns a `Bundle` (eg. `{( TextSpan::new("!"), MyMarkerComponent )}`).
-/// 3. Optionally, a list of other nodes in square brackets.
+/// The most basic node is a block which returns a `Bundle`. This block can be prefixed with an optional name
+/// annotation (eg `my_name: {( MyComponents ... )}`). A node may also have a list of child nodes
+/// given after it in square brackets. All nodes must end with a semicolon.
 ///
 /// You don't have to settle for a static structure either; instead of using the normal node syntax
-/// you can just plop in a codeblock which returns `IntoIterator<Item = Box<dyn Prototype>>`.
+/// you can just plop in a codeblock prefixed with `@` to insent a whole iterator of `Box<dyn Prototype>>`.
+/// This is called "splicing".
+///
+/// # Names
+///
+/// Most nodes don't need names, and you can safely omit the name. But you should give nodes unique names
+/// in the following three cases:
+/// + Entities which somtimes there and somtimes not in different builds.
+/// + Children that may be re-ordered between builds.
+/// + Lists or iterators of entities of variable length.
 ///
 /// # Composition
 ///
 /// It's easy to compose functions that return `Templates`. See the examples directory for an indication
-/// of how to do this.
-///
-/// # Usage
-///
-/// Once you have a template, you can insert it into the world using `Commands::build`.
+/// of how to do this. The simplest way is simply to return a template from a splice (`@{ ... }`) node.
 ///
 /// # Grammar
 ///
@@ -271,9 +299,9 @@ impl<B: Bundle> IntoIterator for Fragment<B> {
 ///
 /// ```ignore
 ///      <template> = *( <node> )
-///          <node> = <$block> | <fragment> ";"        -- where block returns `T: IntoIterator<Box<dyn Prototype>>`.
-///      <fragment> = <name> ":" <$block> <children>?  -- where block returns `B: Bundle`.
-///          <name> = <$ident> | <$block>              -- where block returns `D: Display`.
+///          <node> = ( "@" <$block> | <fragment> ) ";" -- where block returns `T: IntoIterator<Item = Box<dyn Prototype>>`.
+///      <fragment> = <name>? <$block> <children>?      -- where block returns `B: Bundle`.
+///          <name> = ( <$ident> | <$block> ) ":"       -- where block returns `D: Display`.
 ///      <children> = "[" <template> "]"           
 ///        <$ident> = an opaque rust identifier
 ///        <$block> = a rust codeblock of a given type
@@ -289,43 +317,39 @@ macro_rules! template {
     }};
 }
 
-// This template allows you to append templates to an existing list. It is mostly internal, prefer
-// the `template!` macro.
-//
-// This expects to have the a ident of a pre-allocated list passeed in, followed by a semicolon.
-// Uses token-tree munching to traverse down the list of siblings and into the list of children
-// at the same time. There's probably a better way to do this but *shrug* if it aint broke don't
-// fix it.
+/// Used internally. See `template!()`.
 #[macro_export]
 macro_rules! push_template {
     // Handle the empty cases.
     () => {};
     ($fragments:ident;) => {};
-    // Handle the case where it's just a codeblock (assume its returning an iterator of prototypes).
-    ($fragments:ident; $block:block ; $( $($sib:tt)+ )? ) => {
+    // Handle the case when no name is specified.
+    ($fragments:ident; $block:block $( [ $( $children:tt )+ ] )? ; $( $($sib:tt)+ )?) => {
+        push_fragment!($fragments; { None } $block $( [ $( $children )* ] )* ; $( $( $sib )* )* )
+    };
+    // Handle the fully specified case, when the name is a stiatic identifier.
+    ($fragments:ident; $name:ident: $block:block $( [ $( $children:tt )+ ] )? ; $( $($sib:tt)+ )?) => {
+        // Stringify the name and throw it in a code-block.
+        push_fragment!($fragments; { Some(stringify!($name).to_string()) } $block $( [ $( $children )* ] )* ; $( $( $sib )* )* )
+    };
+    // Handle the fully specified case, when the name is also a code-block.
+    ($fragments:ident; $name:block: $block:block $( [ $( $children:tt )+ ] )? ; $( $($sib:tt)+ )?) => {
+        push_fragment!($fragments; { Some($name.to_string()) } $block $( [ $( $children )* ] )* ; $( $( $sib )* )* )
+    };
+    // Handle the case where it's just a codeblock, returning an iterator of prototypes.
+    ($fragments:ident; @ $block:block ; $( $($sib:tt)+ )? ) => {
         $fragments.extend({ $block }); // Extend the fragments with the value of the block.
         $(push_template!($fragments; $($sib)*))* // Continue pushing siblings onto the current list.
     };
-    // Handle the fully specified case, when the name is also a code-block.
-    ($fragments:ident; $name:block: $block:block $( [ $( $children:tt )+ ] )? ; $( $($sib:tt)+ )? ) => {
+}
+
+/// Used internally. See `template!()`.
+#[macro_export]
+macro_rules! push_fragment {
+    ($fragments:ident; $anchor:block $bundle:block $( [ $( $children:tt )+ ] )? ; $( $($sib:tt)+ )?) => {
         let fragment = Fragment {
-            name: std::borrow::Cow::Owned($name.to_string()), // Evaluate the name, assuming it returns `D: Display`.
-            bundle: $block,
-            children: {
-                #[allow(unused_mut)]
-                let mut fragments = Vec::new();
-                $(push_template!(fragments; $($children)*);)* // Push the first child onto a new list of children.
-                fragments
-            },
-        };
-        $fragments.push(Box::new(fragment) as Box::<_>);
-        $(push_template!($fragments; $($sib)*))* // Continue pushing siblings onto the current list.
-    };
-    // Handle the fully specified case, when the name is a stiatic identifier.
-    ($fragments:ident; $name:ident: $block:block $( [ $( $children:tt )+ ] )? ; $( $($sib:tt)+ )? ) => {
-        let fragment = Fragment {
-            name: std::borrow::Cow::Borrowed(stringify!($name)), // Turn the symbol directly into a str.
-            bundle: $block,
+            anchor: $anchor,
+            bundle: $bundle,
             children: {
                 #[allow(unused_mut)]
                 let mut fragments = Vec::new();
