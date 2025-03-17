@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use bevy_ecs::{component::ComponentId, prelude::*};
+use bevy_ecs::{component::ComponentId, entity, prelude::*};
 use bevy_hierarchy::prelude::*;
 
 /// A template is an ordered collection of heterogenous prototypes, which can be
@@ -18,32 +18,14 @@ trait BuildTemplate {
     ///
     /// For information about what happens when a prototype is built on a
     /// specific entity, see [`Prototype::build`].
-    fn build(self, world: &mut World);
+    fn build(self, world: &mut World, entity: Entity);
 }
 
 impl BuildTemplate for Template {
-    fn build(self, world: &mut World) {
-        world.init_resource::<RootReceipt>();
-        world.resource_scope(|world, mut root: Mut<RootReceipt>| {
-            let mut i = 0;
-            for prototype in self.into_iter() {
-                // Determine the anchor for the prototype.
-                let prototype_anchor = match prototype.name() {
-                    Some(name) => Anchor::Named(name.to_string()),
-                    None => {
-                        let anchor = Anchor::Auto(i);
-                        i += 1;
-                        anchor
-                    }
-                };
-
-                // Get or create the receipt for that anchor.
-                let root_receipt = root.receipts.entry(prototype_anchor).or_default();
-
-                // Build the prototype.
-                prototype.build(world, root_receipt);
-            }
-        });
+    fn build(self, world: &mut World, entity: Entity) {
+        for prototype in self.into_iter() {
+            prototype.build(world, entity);
+        }
     }
 }
 
@@ -54,41 +36,50 @@ pub trait WorldTemplateExt {
 
 impl WorldTemplateExt for World {
     fn build(&mut self, template: Template) {
-        template.build(self)
+        let entity_id = self.spawn_empty().id();
+        template.build(self, entity_id);
     }
 }
 
 /// A command for building a template. The shorthand for this is
 /// [`CommandsTemplateExt::build`]. See [`BuildTemplate::build`] for more
 /// documentation.
-pub struct BuildTemplateCommand(Template);
+pub struct BuildTemplateCommand(Template, Entity);
 
 impl Command for BuildTemplateCommand {
     fn apply(self, world: &mut World) {
-        self.0.build(world)
+        self.0.build(world, self.1);
+    }
+}
+
+impl EntityCommand for BuildTemplateCommand {
+    fn apply(self, entity: Entity, world: &mut World) {
+        self.0.build(world, entity);
     }
 }
 
 pub trait CommandsTemplateExt {
     /// Builds a template. See [`BuildTemplate::build`] for more documentation.
-    fn build(&mut self, template: Template);
+    fn build(&mut self, template: Template) -> EntityCommands;
 }
 
 impl<'w, 's> CommandsTemplateExt for Commands<'w, 's> {
-    fn build(&mut self, template: Template) {
-        self.queue(BuildTemplateCommand(template));
+    fn build(&mut self, template: Template) -> EntityCommands {
+        let entity_id = self.spawn_empty().id();
+        self.queue(BuildTemplateCommand(template, entity_id));
+        self.entity(entity_id)
     }
 }
 
-/// Identifies data in a `Receipt` based on the positon and name of a
-/// `Prototype`.
-#[derive(Hash, Eq, PartialEq)]
-enum Anchor {
-    /// If a name is ommited from a the prototype, it will be given an
-    /// incrementing id.
-    Auto(u64),
-    /// If a name is provided, we use that.
-    Named(String),
+pub trait EntityCommandsTemplateExt {
+    fn build_to(&mut self, template: Template, entity: Entity) -> EntityCommands;
+}
+
+impl<'w> CommandsTemplateExt for EntityCommands<'w> {
+    fn build(&mut self, template: Template) -> EntityCommands {
+        self.queue(BuildTemplateCommand(template, self.id()));
+        self.reborrow()
+    }
 }
 
 /// A prototype is the type-erased trait form of a [`Fragment`] contained within
@@ -118,25 +109,7 @@ pub trait Prototype {
     ///
     /// To instead build an entire `Template` at the root level, see
     /// [`BuildTemplate::build`].
-    fn build(self: Box<Self>, world: &mut World, receipt: &mut Receipt);
-}
-
-/// Receipts contain hints about the previous outcome of building a particular
-/// prototype.
-#[derive(Default)]
-pub struct Receipt {
-    /// The entity this prototype was last built on (if any).
-    target: Option<Entity>,
-    /// The coponents it inserted.
-    components: HashSet<ComponentId>,
-    /// The receipts of all the children, organized by name.
-    children: HashMap<Anchor, Receipt>,
-}
-
-/// A resource that tracks the receipts for root-level templates.
-#[derive(Resource, Default)]
-struct RootReceipt {
-    receipts: HashMap<Anchor, Receipt>,
+    fn build(self: Box<Self>, world: &mut World, entity: Entity);
 }
 
 /// A fragment is a tree of bundles with optional names. It implements
@@ -156,7 +129,7 @@ impl<B: Bundle> Prototype for Fragment<B> {
         self.anchor.clone()
     }
 
-    fn build(self: Box<Self>, world: &mut World, receipt: &mut Receipt) {
+    fn build<'a>(self: Box<Self>, world: &'a mut World, entity: Entity) {
         // Collect the set of components in the bundle
         let mut components = HashSet::new();
         B::get_component_ids(world.components(), &mut |maybe_id| {
@@ -165,63 +138,20 @@ impl<B: Bundle> Prototype for Fragment<B> {
             }
         });
 
-        // Get or spawn the entity
-        let mut entity = match receipt.target.and_then(|e| world.get_entity_mut(e).ok()) {
-            Some(entity) => entity,
-            None => world.spawn_empty(),
-        };
-        let entity_id = entity.id();
-        receipt.target = Some(entity_id);
-
-        // Insert the bundle
-        entity.insert(self.bundle);
-
-        // Remove the components in the previous bundle but not this one
-        for component_id in receipt.components.difference(&components) {
-            entity.remove_by_id(*component_id);
-        }
-
         // Build the children
         let num_children = self.children.len();
         let mut children = Vec::with_capacity(num_children);
-        let mut child_receipts = HashMap::with_capacity(num_children);
-        let mut i = 0;
         for child in self.children {
-            // Compute the anchor for this child, using it's name if supplied or an auto-incrementing
-            // counter if not.
-            let child_anchor = match child.name() {
-                Some(name) => Anchor::Named(name),
-                None => {
-                    let anchor = Anchor::Auto(i);
-                    i += 1;
-                    anchor
-                }
-            };
-
-            // Get or create receipt
-            let mut child_receipt = receipt.children.remove(&child_anchor).unwrap_or_default();
-
             // Build the child
-            child.build(world, &mut child_receipt);
-
-            // Return the receipts
-            children.push(child_receipt.target.unwrap());
-            child_receipts.insert(child_anchor, child_receipt);
+            let child_entity = world.spawn_empty().id();
+            child.build(world, child_entity);
+            children.push(child_entity);
         }
 
-        // Position the children beneith the entity
-        world.entity_mut(entity_id).replace_children(&children);
-
-        // Clear any remaining orphans
-        for receipt in receipt.children.values() {
-            if let Some(entity) = receipt.target {
-                world.entity_mut(entity).despawn_recursive();
-            }
-        }
-
-        // Update the receipt for use next frame
-        receipt.components = components;
-        receipt.children = child_receipts;
+        // Get or spawn the entity
+        world.entity_mut(entity)
+            .insert(self.bundle)
+            .add_children(&children);
     }
 }
 
