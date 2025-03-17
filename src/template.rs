@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use bevy_ecs::{component::ComponentId, entity, prelude::*};
+use bevy_ecs::prelude::*;
 use bevy_hierarchy::prelude::*;
 
 /// A template is an ordered collection of heterogenous prototypes, which can be
