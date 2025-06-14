@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 
 use bevy_ecs::{
-    component::{ComponentHooks, ComponentId, HookContext, Mutable, StorageType},
+    component::{ComponentHooks, HookContext, Mutable, StorageType},
     prelude::*,
     world::DeferredWorld,
 };
