@@ -1,9 +1,9 @@
 use core::marker::PhantomData;
 
 use bevy_ecs::{
-    component::{ComponentHooks, ComponentId, StorageType},
+    component::{ComponentHooks, ComponentId, HookContext, Mutable, StorageType},
     prelude::*,
-    world::{Command, DeferredWorld},
+    world::DeferredWorld,
 };
 
 /// A component that when added to an entity, will be removed from the entity and replaced with its contents if [`Some`].
@@ -57,6 +57,8 @@ pub struct Maybe<B: Bundle>(pub Option<B>);
 impl<B: Bundle> Component for Maybe<B> {
     /// This is a sparse set component as it's only ever added and removed, never iterated over.
     const STORAGE_TYPE: StorageType = StorageType::SparseSet;
+    
+    type Mutability = Mutable;
 
     fn register_component_hooks(hooks: &mut ComponentHooks) {
         hooks.on_add(maybe_hook::<B>);
@@ -88,7 +90,7 @@ impl<B: Bundle> Default for Maybe<B> {
 /// A hook that runs whenever [`Maybe`] is added to an entity.
 ///
 /// Generates a [`MaybeCommand`].
-fn maybe_hook<B: Bundle>(mut world: DeferredWorld<'_>, entity: Entity, _component_id: ComponentId) {
+fn maybe_hook<B: Bundle>(mut world: DeferredWorld<'_>, HookContext{ entity, .. }: HookContext) {
     // Component hooks can't perform structural changes, so we need to rely on commands.
     world.commands().queue(MaybeCommand {
         entity,

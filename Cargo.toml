@@ -6,11 +6,9 @@ edition = "2021"
 repository = "https://github.com/Leafwing-Studios/i-cant-believe-its-not-bsn"
 license = "MIT OR Apache-2.0"
 description = "Tools for spawning entity hierarchies in Bevy"
-tags = ["bevy", "ecs"]
 
 [dependencies]
-bevy_ecs = { version = "0.15", default-features = false }
-bevy_hierarchy = { version = "0.15", default-features = false }
+bevy_ecs = { version = "0.16.1", default-features = false }
 
 [dev-dependencies]
-bevy = { version = "0.15" }
+bevy = { version = "0.16.1" }

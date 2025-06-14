@@ -1,11 +1,10 @@
 use core::marker::PhantomData;
 
 use bevy_ecs::{
-    component::{ComponentHooks, ComponentId, StorageType},
+    component::{ComponentHook, ComponentHooks, HookContext, Mutable, StorageType},
     prelude::*,
-    world::{Command, DeferredWorld},
+    world::DeferredWorld,
 };
-use bevy_hierarchy::BuildChildren;
 
 /// A component that, when added to an entity, will add a child entity with the given bundle.
 ///
@@ -41,9 +40,11 @@ pub struct WithChild<B: Bundle>(pub B);
 impl<B: Bundle> Component for WithChild<B> {
     /// This is a sparse set component as it's only ever added and removed, never iterated over.
     const STORAGE_TYPE: StorageType = StorageType::SparseSet;
-
-    fn register_component_hooks(hooks: &mut ComponentHooks) {
-        hooks.on_add(with_child_hook::<B>);
+    
+    type Mutability = Mutable;
+    
+    fn on_add() -> Option<ComponentHook> {
+        Some(with_child_hook::<B>)
     }
 }
 
@@ -52,8 +53,7 @@ impl<B: Bundle> Component for WithChild<B> {
 /// Generates a [`WithChildCommand`].
 fn with_child_hook<B: Bundle>(
     mut world: DeferredWorld<'_>,
-    entity: Entity,
-    _component_id: ComponentId,
+    HookContext {entity, .. }: HookContext,
 ) {
     // Component hooks can't perform structural changes, so we need to rely on commands.
     world.commands().queue(WithChildCommand {
@@ -146,6 +146,8 @@ impl<B: Bundle, I: IntoIterator<Item = B> + Send + Sync + 'static> Component
 {
     /// This is a sparse set component as it's only ever added and removed, never iterated over.
     const STORAGE_TYPE: StorageType = StorageType::SparseSet;
+    
+    type Mutability = Mutable;
 
     fn register_component_hooks(hooks: &mut ComponentHooks) {
         hooks.on_add(with_children_hook::<B, I>);
@@ -157,8 +159,7 @@ impl<B: Bundle, I: IntoIterator<Item = B> + Send + Sync + 'static> Component
 /// Generates a [`WithChildrenCommand`].
 fn with_children_hook<B: Bundle, I: IntoIterator<Item = B> + Send + Sync + 'static>(
     mut world: DeferredWorld<'_>,
-    entity: Entity,
-    _component_id: ComponentId,
+    HookContext { entity, .. }: HookContext,
 ) {
     // Component hooks can't perform structural changes, so we need to rely on commands.
     world.commands().queue(WithChildrenCommand {
@@ -202,7 +203,6 @@ impl<B: Bundle, I: IntoIterator<Item = B> + Send + Sync + 'static> Command
 #[cfg(test)]
 mod tests {
     use bevy_ecs::system::RunSystemOnce;
-    use bevy_hierarchy::Children;
 
     use super::*;
 
@@ -259,7 +259,7 @@ mod tests {
         assert_eq!(children.len(), 3);
 
         for (i, child_entity) in children.iter().enumerate() {
-            assert_eq!(world.get::<B>(*child_entity), Some(&B(i as u8)));
+            assert_eq!(world.get::<B>(child_entity), Some(&B(i as u8)));
         }
     }
 
@@ -278,7 +278,7 @@ mod tests {
         assert_eq!(children.len(), 7);
 
         for (i, child_entity) in children.iter().enumerate() {
-            assert_eq!(world.get::<B>(*child_entity), Some(&B(i as u8)));
+            assert_eq!(world.get::<B>(child_entity), Some(&B(i as u8)));
         }
     }
 

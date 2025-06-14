@@ -1,7 +1,5 @@
 use std::collections::HashSet;
-
 use bevy_ecs::prelude::*;
-use bevy_hierarchy::prelude::*;
 
 /// A template is an ordered collection of heterogenous prototypes, which can be
 /// inserted into the world. Returned by the [`template`] macro.
@@ -104,8 +102,12 @@ impl Command for BuildTemplateCommand {
 }
 
 impl EntityCommand for BuildTemplateCommand {
-    fn apply(self, entity: Entity, world: &mut World) {
-        self.0.build(world, entity);
+    fn apply(self, mut entity_world_mut: EntityWorldMut) { 
+        let entity = entity_world_mut.id();
+        unsafe { 
+            let world = entity_world_mut.world_mut(); 
+            self.0.build(world, entity);
+        }
     }
 }
 
